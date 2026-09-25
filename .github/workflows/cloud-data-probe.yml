@@ -1,0 +1,34 @@
+name: Cloud data validation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - cloud-probe.cjs
+      - cloud-probe.test.cjs
+      - .github/workflows/cloud-data-probe.yml
+permissions:
+  contents: read
+concurrency:
+  group: cloud-data-probe
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Parser and failure-mode tests
+        run: node --test cloud-probe.test.cjs
+      - name: Fetch and cross-check live public sources
+        run: node cloud-probe.cjs
+      - name: Save diagnostic metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-data-probe
+          path: probe-output/report.json
+          if-no-files-found: warn
+          retention-days: 7
