@@ -1,0 +1,23 @@
+{
+  "id": "510880-web-R-average-v1",
+  "version": "0.2.0",
+  "symbol": "510880",
+  "simulationStart": "2020-01-01",
+  "initialState": "empty",
+  "warmupStart": "2009-01-01",
+  "timezone": "Asia/Shanghai",
+  "railWeeks": 52,
+  "reviewWeekday": 2,
+  "observation": "current natural week Monday and Tuesday only",
+  "execution": "next natural week first exchange trading day opening price",
+  "R": "RSI14 <= 35 OR volume5/volume20 >= 1.20; otherwise next effective review buys without re-touch",
+  "protection": "daily confirmed close / simulated remaining-position entry average <= 0.915; next trading day open sell; freeze",
+  "warningRatio": 0.92,
+  "exitRatio": 0.915,
+  "recovery": "effective Tuesday close > MA20 and MA20 rising and close <= middle * 1.02",
+  "dividends": "neutralize indicator/rail per desktop rules, do not lower protection entry average",
+  "fills": "hypothetical all-in/all-out at verified unadjusted open; not real orders; no return claims",
+  "buyQuote": "verified previous-session close minus verified execution-day cash distribution, plus default 1%, rounded upward to 0.001; limit not execution price",
+  "publication": "single source preview only; confirmed data required for state advancement; unknown != hold",
+  "scope": "read-only private-use reference, no brokerage connection or real-account ledger"
+}

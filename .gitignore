@@ -1,0 +1,10 @@
+node_modules/
+probe-output/
+.env
+.env.*
+*.log
+site/
+local-fixture.json
+validation-output/
+validate-local.cjs
+dev-server.cjs

@@ -87,5 +87,5 @@ async function run(){
  if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## 510880 cloud data probe\n\nThis is a transport/schema check, not a trading decision or production readiness certificate. No raw market history or private account data is published.\n\n```json\n'+JSON.stringify(result,null,2)+'\n```\n');
  if(!result.ready)process.exitCode=1;return result;
 }
-module.exports={bars,dividends,managerCheck,calendar,expectedClose,compare};
+module.exports={URLS,request,bars,dividends,managerCheck,calendar,expectedClose,compare};
 if(require.main===module)run().catch(e=>{console.error(e.message);process.exitCode=1;});
