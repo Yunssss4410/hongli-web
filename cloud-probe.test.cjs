@@ -1,0 +1,9 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const p=require('./cloud-probe.cjs');
+const fixture=()=>Array.from({length:65},(_,i)=>({date:new Date(Date.UTC(2026,5,1+i)).toISOString().slice(0,10),open:3,high:3.2,low:2.9,close:3.1,volume:10000}));
+test('Tencent volume is normalized from lots to shares',()=>{const b=fixture(),text=JSON.stringify({data:{sh510880:{day:b.map(x=>[x.date,x.open,x.close,x.high,x.low,x.volume/100])}}});assert.deepEqual(p.bars(text,'tencent'),b);});
+test('duplicate and malformed OHLC fail closed',()=>{const a=fixture().map(x=>({...x,day:x.date}));a[1].day=a[0].day;assert.throws(()=>p.bars(JSON.stringify(a),'sina'));a[1].day='2026-06-02';a[1].high=2;assert.throws(()=>p.bars(JSON.stringify(a),'sina'));});
+test('comparison requires fresh dates and 60 matching days',()=>{const a=fixture(),asof=a.at(-1).date;assert.equal(p.compare(a,a,asof).matchedDays,60);assert.throws(()=>p.compare(a,a.slice(0,-1),asof));const b=structuredClone(a);b.at(-1).close+=.001;assert.throws(()=>p.compare(a,b,asof));});
+test('volume quantization tolerance is limited',()=>{const a=fixture(),b=structuredClone(a),asof=a.at(-1).date;b.at(-1).volume+=50;assert.equal(p.compare(a,b,asof).matchedDays,60);b.at(-1).volume++;assert.throws(()=>p.compare(a,b,asof));});
+test('Shanghai close boundary, holiday and unknown year',()=>{const c={year:2026,ranges:[{from:'2026-10-01',to:'2026-10-07'}]};assert.equal(p.expectedClose(c,new Date('2026-09-25T06:59:00Z')),'2026-09-24');assert.equal(p.expectedClose(c,new Date('2026-09-25T07:00:00Z')),'2026-09-25');assert.equal(p.expectedClose(c,new Date('2026-10-05T09:00:00Z')),'2026-09-30');assert.throws(()=>p.expectedClose(c,new Date('2027-01-01T09:00:00Z')));});
+test('broken auxiliary sources are not accepted as no dividends/holidays',()=>{assert.throws(()=>p.dividends('<html>error</html>'));assert.throws(()=>p.calendar('<html>error</html>'));assert.throws(()=>p.managerCheck('',[]));});
