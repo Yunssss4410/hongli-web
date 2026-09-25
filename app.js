@@ -10,7 +10,8 @@ function render(){
  const ready=valid&&!dueUnverified;
  $('quote').hidden=true;
  text('health',`${ready?'● 数据复核通过':s.status==='error'?'● 数据异常':'● 待核验 / 等待更新'} · 收盘截至 ${c?.asof||'未知'}${expectedDate?' · 应有日期 '+expectedDate:''}\n${s.error||(!ready?(s.testOnly?'开发测试快照，不能用于交易':future?'设备时间或数据时间异常':dueUnverified?'已到执行时点，开盘执行数据待核验':fresh.reviewStale?'本周二复盘尚未完成':s.status==='provisional'?'先到数据仅供预览，尚未推进正式策略':'请勿把旧状态当作最新操作依据'):'最后云端检查 '+dateTime(s.generatedAt))}`);
- $('health').className='health '+(ready?'ok':s.status==='error'?'error':'warn');
+ if(s.audit?.warnings?.length)$('health').textContent+='\n'+s.audit.warnings.join('；');
+ $('health').className='health '+(ready?(s.audit?.warnings?.length?'warn':'ok'):s.status==='error'?'error':'warn');
  if(!st){text('headline','策略状态尚未就绪');text('action','数据核验及历史回放完成后展示，当前不提供交易指令。');text('state-detail','');}
  else{
   const stateName=st.shares?'模拟持仓':st.frozen?'空仓冻结':st.waiting?'空仓 · R等待':'空仓等待';
