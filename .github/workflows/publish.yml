@@ -1,0 +1,47 @@
+name: Update strategy dashboard
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['DEVELOPMENT.md', 'README.md', 'cloud-probe.test.cjs', '.github/workflows/cloud-data-probe.yml']
+  schedule:
+    - cron: '5,15,25,35,45,55 7-9 * * 1-5'
+    - cron: '15 13 * * 1-5'
+    - cron: '35 1 * * 1-5'
+permissions:
+  contents: read
+concurrency:
+  group: hongli-web-publish
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Strategy and failure-mode tests
+        run: node --test cloud-probe.test.cjs model.test.cjs view-state.test.cjs
+      - name: Fetch, validate and build atomic snapshot
+        run: node build.cjs
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
