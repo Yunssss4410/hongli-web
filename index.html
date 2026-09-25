@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#234b46"><meta name="description" content="红利簿手机版部署验证页；尚未接入行情与策略。">
+<title>红利簿 · 手机版</title>
+<style>
+:root{color-scheme:light;--ink:#223f3c;--muted:#59655d;--paper:#faf7ec;--line:#c6c8b8;--amber:#785009}*{box-sizing:border-box}body{margin:0;background:#e7e4d8;color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Microsoft YaHei",sans-serif}main{max-width:880px;margin:auto;padding:28px 18px 48px}header{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:3px solid var(--ink);padding-bottom:18px}h1{font:32px/1.2 Georgia,"Songti SC",SimSun,serif;letter-spacing:.2em;margin:0 0 8px}small,.muted{color:var(--muted)}.tag{border:1px solid var(--ink);padding:4px 10px;white-space:nowrap;font-size:13px;background:var(--paper)}article,section{background:var(--paper);border:1px solid var(--line);margin-top:20px;padding:22px}article{border-left:5px solid var(--amber)}.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--amber)}h2{font-size:23px;margin:8px 0 12px}p{margin:10px 0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0}.cell{padding:10px 16px;border-left:1px solid var(--line)}.cell:first-child{border:0;padding-left:0}.label{display:block;color:var(--muted);font-size:13px}.value{display:block;font-size:18px;font-weight:650;margin-top:5px}.pending{color:var(--amber)}.note{font-size:14px}.steps{padding-left:22px}.steps li{padding:5px 0}a{color:#145e64;text-underline-offset:4px}footer{margin-top:24px;font-size:13px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}@media(max-width:540px){main{padding:20px 14px}h1{font-size:27px}header{align-items:flex-start}.tag{font-size:12px}article,section{padding:18px}.grid{grid-template-columns:1fr}.cell,.cell:first-child{border:0;border-top:1px solid var(--line);padding:12px 0}.cell:first-child{border:0}h2{font-size:21px}}
+</style>
+</head>
+<body><main>
+<header><div><h1>红利簿</h1><small>510880 / 手机版 · 独立策略看板</small></div><span class="tag">部署验证版</span></header>
+<article><div class="eyebrow">PROJECT STATUS / 项目状态</div><h2>网页已上线，行情尚未接入</h2><p>这是 GitHub Pages 的发布验证页面，不是正式策略结果。当前没有买卖信号，也没有读取你的真实持仓。</p><p class="note pending">请勿根据此验证页进行交易。空仓、持仓和触轨状态将在数据与算法核验完成后展示。</p></article>
+<section class="grid" aria-label="接入状态"><div class="cell"><span class="label">页面版本</span><strong class="value">验证版 0.1.0</strong></div><div class="cell"><span class="label">行情数据</span><strong class="value pending">尚未接入</strong></div><div class="cell"><span class="label">周K / 策略参考仓位</span><strong class="value pending">尚未启用</strong></div></section>
+<section><div class="eyebrow">NEXT / 接下来</div><h2>先验证真实数据，再启用策略</h2><ol class="steps"><li>验证 GitHub 提交能够自动发布为网页。</li><li>验证云端日线获取、日期检查及不同来源复核。</li><li>对照桌面版验证周二复盘、R等待和保护规则。</li><li>接入可点选的周K图、触轨标记和策略参考状态。</li></ol><p class="note muted">网页版将假设严格按策略执行，但不代表实际账户。不会上传桌面账簿、账户资料或真实成交记录。</p></section>
+<footer><span>发布标记：PAGES-20260925-A</span><a href="https://github.com/Yunssss4410/hongli-web" target="_blank" rel="noopener noreferrer">查看项目仓库 ↗</a></footer>
+</main></body></html>
