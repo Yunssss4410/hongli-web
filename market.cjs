@@ -22,6 +22,7 @@ function makeCalendar(cal,prior={}){
  return days;
 }
 function assertEvents(events){if(events.length!==baseline.events.length||events.some((e,i)=>['record_date','ex_date','pay_date'].some(k=>e[k]!==baseline.events[i][k])||Math.abs(e.cash_per_share-baseline.events[i].cash_per_share)>1e-9))throw Error('发现新分红或分红修订，须核验官方公告后更新基准');}
+function volumeAgrees(b,q){return Math.abs(q.volume-b.volume)<=(b.date<=baseline.asof?55.01:50.01)||(b.date<=baseline.asof&&q.volume===Math.floor(b.volume/100)*100);}
 function referenceData(raw,now,previous){
  const warnings=[];let calendar,expected;
  if(raw.calendar){const cal=p.calendar(raw.calendar);expected=p.expectedClose(cal,now);calendar=makeCalendar(cal,previous?.calendar);}
@@ -42,11 +43,11 @@ function assemble(raw,now,previous){
  if(!fresh.includes('sina')){const last=rawHistory.at(-1)?.date;rawHistory.push(...feeds.tencent.filter(b=>b.date>last&&b.date<=expected));}
  const rows=canonicalize(rawHistory);const audit=historicalCheck(rows);
  let matched=0;
- if(feeds.tencent){const t=new Map(feeds.tencent.filter(b=>b.date<=expected).map(b=>[b.date,b]));for(const b of feeds.sina.filter(b=>b.date<=expected)){const q=t.get(b.date);if(!q)continue;for(const k of ['open','high','low','close'])if(Math.round(q[k]*1000)!==Math.round(b[k]*1000))throw Error('双源价格冲突 '+b.date+' '+k);if(Math.abs(q.volume-b.volume)>55.01)throw Error('双源成交量冲突 '+b.date);matched++;}if(matched<60)throw Error('双源重叠覆盖不足');}
+ if(feeds.tencent){const t=new Map(feeds.tencent.filter(b=>b.date<=expected).map(b=>[b.date,b]));for(const b of feeds.sina.filter(b=>b.date<=expected)){const q=t.get(b.date);if(!q)continue;for(const k of ['open','high','low','close'])if(Math.round(q[k]*1000)!==Math.round(b[k]*1000))throw Error('双源价格冲突 '+b.date+' '+k);if(!volumeAgrees(b,q))throw Error('双源成交量冲突 '+b.date);matched++;}if(matched<60)throw Error('双源重叠覆盖不足');}
  const snapshot={asof:expected,bars:rows,events,calendar};
  for(let d=baseline.asof;d<=expected;d=core.addDays(d,1)){if(calendar[d]===undefined)throw Error('日历未覆盖 '+d);if(calendar[d]&&!rows.some(b=>b.date===d))throw Error('缺少交易日 '+d);}
  for(const b of rows){core.validateBar(b);if(previous?.acceptedHashes?.[b.date]&&previous.acceptedHashes[b.date]!==hash(b))throw Error('已发布日线被修订 '+b.date);}
  if(fresh.length===2){const alternate=core.prepare(rows.map(b=>{const q=feeds.tencent.find(x=>x.date===b.date);return q&&b.date>baseline.asof?{...b,volume:q.volume}:b;}),events),canonical=core.prepare(rows,events);for(const b of rows.slice(-80))if(core.weekday(b.date)===1){const a=core.review(canonical,b.date),b2=core.review(alternate,b.date);if(a&&b2&&a.confirm!==b2.confirm)throw Error('来源成交量精度改变R信号');}}
  return {snapshot,feeds,status:fresh.length===2?'confirmed':'provisional',audit:{...audit,matchedDays:matched,warnings},acceptedHashes:Object.fromEntries(rows.filter(b=>b.date>baseline.asof).map(b=>[b.date,hash(b)]))};
 }
-module.exports={hash,canonicalize,historicalCheck,makeCalendar,assertEvents,referenceData,assemble};
+module.exports={hash,canonicalize,historicalCheck,makeCalendar,assertEvents,volumeAgrees,referenceData,assemble};
