@@ -4,10 +4,11 @@ const p=require('./cloud-probe.cjs'),market=require('./market.cjs'),core=require
 const SITE='https://yunssss4410.github.io/hongli-web/snapshot.json';
 function versionedHtml(html,read){return html.replace(/(src|href)="(style\.css|app\.js|chart\.js|buy-limit\.js|view-state\.js)"/g,(_,attr,file)=>`${attr}="${file}?v=${market.hash(read(file)).slice(0,16)}"`);}
 async function previousSnapshot(){const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);try{const r=await fetch(SITE+'?check='+Date.now(),{signal:c.signal,cache:'no-store',redirect:'error'});if(r.status===404)return null;if(!r.ok)throw Error('无法读取上次发布快照 HTTP '+r.status);const text=await r.text();if(text.length>2000000)throw Error('快照过大');const s=JSON.parse(text);if(s.schemaVersion!==1||!s.generatedAt)throw Error('上次快照格式异常');return s;}finally{clearTimeout(t);}}
-async function acquire(){const raw={},sources={};await Promise.all(Object.entries(p.URLS).map(async([k,u])=>{let error;for(let n=0;n<2;n++){try{const r=await p.request(u);raw[k]=r.text;const {text,...metadata}=r;sources[k]={status:'ok',...metadata};return;}catch(e){error=e.message;if(n===0)await new Promise(r=>setTimeout(r,1000));}}sources[k]={status:'error',error};}));return {raw,sources};}
+async function acquire(previous,now){const raw={},sources={};await Promise.all(Object.entries(p.URLS).map(async([k,u])=>{if(k==='calendar'){const result=await require('./calendar-policy.cjs').acquireCalendar(previous,now);raw.calendarState=result;sources.calendar=result.source;return;}let error;for(let n=0;n<2;n++){try{const r=await p.request(u);raw[k]=r.text;const {text,...metadata}=r;sources[k]={status:'ok',...metadata};return;}catch(e){error=e.message;if(n===0)await new Promise(r=>setTimeout(r,1000));}}sources[k]={status:'error',error};}));return {raw,sources};}
 function referenceQuote(s,simulation,now){const pending=simulation.state.pending;if(!pending||pending.side!=='BUY')return null;const local=clock.shanghai(now);if(pending.targetDate<local.date||(pending.targetDate===local.date&&local.time>='09:25:00'))return {status:'expired',targetDate:pending.targetDate};let ref=core.addDays(pending.targetDate,-1);for(let i=0;i<25;i++,ref=core.addDays(ref,-1)){if(s.calendar[ref]===undefined)return {status:'unknown_calendar'};if(s.calendar[ref])break;}if(s.asof<ref)return {status:'waiting',referenceDate:ref,targetDate:pending.targetDate};const bar=s.bars.find(b=>b.date===ref);if(!bar)return {status:'missing'};const distribution=s.events.filter(e=>e.ex_date===pending.targetDate).reduce((a,e)=>a+e.cash_per_share,0);return {status:'ready',referenceDate:ref,targetDate:pending.targetDate,close:bar.close,distribution,reference:bar.close-distribution,defaultPercent:1};}
 function published(previous,now,raw,sources){
  const output={schemaVersion:1,version:contract.version,generatedAt:now.toISOString(),status:'error',sources,error:null,contract,contractHash:market.hash(contract),calendar:previous?.calendar||{},confirmed:previous?.confirmed||null,preview:null,acceptedHashes:previous?.acceptedHashes||{},publicationLog:previous?.publicationLog||[]};
+ output.calendarCache=raw.calendarState?.cache||previous?.calendarCache||null;
  try{
   const result=market.assemble(raw,now,previous),s=result.snapshot;output.calendar=s.calendar;output.expected=s.asof;output.audit=result.audit;
   const local=clock.shanghai(now),through=local.time>='15:00:00'?local.date:core.addDays(local.date,-1);
@@ -40,7 +41,7 @@ async function build(){
  if(fixture&&process.env.GITHUB_ACTIONS)throw Error('云端发布禁止测试数据');
  const now=fixture?new Date(fixture.now):new Date();
  const previous=fixture?.previous||(fixture?null:await previousSnapshot());
- const {raw,sources}=fixture?fixture:await acquire();
+ const {raw,sources}=fixture?fixture:await acquire(previous,now);
  const output=published(previous,now,raw,sources);
  if(fixture)output.testOnly=true;
  fs.mkdirSync('site',{recursive:true});

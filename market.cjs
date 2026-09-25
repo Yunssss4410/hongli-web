@@ -17,15 +17,20 @@ function historicalCheck(rows){
 }
 function makeCalendar(cal,prior={}){
  const known=new Set(baseline.tradingDates),days={};for(let d='2020-01-01';d<=baseline.asof;d=core.addDays(d,1))days[d]=known.has(d);
- Object.assign(days,calendar2026,prior);
- if(cal)for(let d=cal.year+'-01-01';d<=cal.year+'-12-31';d=core.addDays(d,1))days[d]=core.weekday(d)<5&&!cal.ranges.some(r=>d>=r.from&&d<=r.to);
+ const {compatible}=require('./calendar-policy.cjs');compatible(days,calendar2026);Object.assign(days,calendar2026);compatible(days,prior);Object.assign(days,prior);
+ if(cal)for(let d=cal.year+'-01-01';d<=cal.year+'-12-31';d=core.addDays(d,1)){const open=core.weekday(d)<5&&!cal.ranges.some(r=>d>=r.from&&d<=r.to);compatible(days,{[d]:open});days[d]=open;}
  return days;
 }
 function assertEvents(events){if(events.length!==baseline.events.length||events.some((e,i)=>['record_date','ex_date','pay_date'].some(k=>e[k]!==baseline.events[i][k])||Math.abs(e.cash_per_share-baseline.events[i].cash_per_share)>1e-9))throw Error('发现新分红或分红修订，须核验官方公告后更新基准');}
 function volumeAgrees(b,q){return Math.abs(q.volume-b.volume)<=(b.date<=baseline.asof?55.01:50.01)||(b.date<=baseline.asof&&q.volume===Math.floor(b.volume/100)*100);}
 function referenceData(raw,now,previous){
  const warnings=[];let calendar,expected;
- if(raw.calendar){const cal=p.calendar(raw.calendar);expected=p.expectedClose(cal,now);calendar=makeCalendar(cal,previous?.calendar);}
+ if(raw.calendarState){
+  const state=raw.calendarState;if(state.error)throw Error(state.error);require('./calendar-policy.cjs').usable(state.cache,now);
+  calendar=makeCalendar(null,state.cache.days);expected=require('./clock.cjs').lastClosed(calendar,now);
+  if(state.source.status==='fallback')warnings.push('上交所在线核验失败；备用日历可用至 '+state.source.coverageThrough+'，最近官方核验 '+state.cache.verifiedAt.slice(0,10)+'；不代表在线获取成功');
+ }
+ else if(raw.calendar){const cal=p.calendar(raw.calendar);expected=p.expectedClose(cal,now);calendar=makeCalendar(cal,previous?.calendar);}
  else{calendar=makeCalendar(null,previous?.calendar);const local=new Date(now.getTime()+8*3600000);let d=local.toISOString().slice(0,10);if(local.getUTCHours()<15)d=core.addDays(d,-1);for(let i=0;i<25;i++,d=core.addDays(d,-1)){if(calendar[d]===undefined)throw Error('已核验日历未覆盖 '+d);if(calendar[d]){expected=d;break;}}if(!expected)throw Error('已核验日历无可用收盘日');warnings.push('上交所网页暂不可达；使用已核验年度日历，不推测未知交易日');}
  const events=raw.dividends?p.dividends(raw.dividends):baseline.events;
  // The live manager must still corroborate every accepted event, including count.
