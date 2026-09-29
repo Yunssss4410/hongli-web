@@ -9,11 +9,14 @@ function referenceQuote(s,simulation,now){const pending=simulation.state.pending
 function published(previous,now,raw,sources){
  const output={schemaVersion:1,version:contract.version,generatedAt:now.toISOString(),status:'error',sources,error:null,contract,contractHash:market.hash(contract),calendar:previous?.calendar||{},confirmed:previous?.confirmed||null,preview:null,acceptedHashes:previous?.acceptedHashes||{},publicationLog:previous?.publicationLog||[]};
  output.calendarCache=raw.calendarState?.cache||previous?.calendarCache||null;
+ const ds=require('./dividend-policy.cjs').evaluate(raw,sources,previous,now);
+ output.dividendCache=ds.cache;output.dividendHealth=ds;
+ raw={...raw,dividendState:ds};
  try{
   const result=market.assemble(raw,now,previous),s=result.snapshot;output.calendar=s.calendar;output.expected=s.asof;output.audit=result.audit;
   const local=clock.shanghai(now),through=local.time>='15:00:00'?local.date:core.addDays(local.date,-1);
   if(result.status==='provisional'){
-   output.status='provisional';output.preview={asof:s.asof,chart:chart(s,now)};
+   output.status='provisional';output.error=ds.error;output.preview={asof:s.asof,chart:chart(s,now),reason:result.previewReason};
    let tue=through;while(core.weekday(tue)!==1)tue=core.addDays(tue,-1);
    output.preview.review={date:tue,signal:core.review(core.prepare(s.bars,s.events),tue)};
    return output;
@@ -51,9 +54,11 @@ async function build(){
  fs.mkdirSync('validation-output',{recursive:true});
  const report={status:output.status,asof:output.confirmed?.asof||null,audit:output.audit,error:output.error,sources,bytes:fs.statSync('site/snapshot.json').size};
  fs.writeFileSync('validation-output/build-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+ if(process.env.GITHUB_OUTPUT)fs.appendFileSync(process.env.GITHUB_OUTPUT,'data-status='+output.status+'\n');
+ if(output.status!=='confirmed'&&process.env.GITHUB_ACTIONS)console.log('::warning::行情/复盘未完成确认；网站将保留旧策略并发布诊断，详见数据健康任务');
  if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Read-only strategy build\n\n```json\n'+JSON.stringify(report,null,2)+'\n```\n');
  // Diagnostic publication on a source failure is intentional; no stale state becomes a new instruction.
  return output;
 }
-module.exports={published,referenceQuote,versionedHtml};
+module.exports={published,referenceQuote,versionedHtml,acquire};
 if(require.main===module)build().catch(e=>{console.error(e.message);process.exitCode=1;});

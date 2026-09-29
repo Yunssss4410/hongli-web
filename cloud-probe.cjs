@@ -64,15 +64,29 @@ function compare(a,b,asof){
  for(const x of first.slice(-60)){const y=by.get(x.date);if(!y)throw Error('Missing overlap date '+x.date);for(const k of ['open','high','low','close'])if(Math.round(x[k]*1000)!==Math.round(y[k]*1000))throw Error('Price conflict '+x.date+' '+k);if(Math.abs(x.volume-y.volume)>50.01)throw Error('Volume conflict '+x.date);count++;}
  if(count<60)throw Error('Insufficient overlap');return {asof,matchedDays:count,priceTolerance:'0.001 CNY tick',volumeToleranceShares:50.01};
 }
+function errorDetail(e){return [e.message,e.cause?.code,e.cause?.message].filter(Boolean).join(' / ').slice(0,400);}
+function decode(buffer,type,start,transport){const charset=/charset\s*=\s*["']?([^;\s"']+)/i.exec(type||'')?.[1]||'utf-8';return {text:new TextDecoder(charset).decode(buffer),bytes:buffer.length,sha256:crypto.createHash('sha256').update(buffer).digest('hex'),elapsedMs:Date.now()-start,transport};}
+async function curlRequest(url,start){
+ const {execFile}=require('node:child_process');
+ const buffer=await new Promise((resolve,reject)=>execFile(process.platform==='win32'?'curl.exe':'curl',['--silent','--show-error','--max-time','20','--connect-timeout','8','--proto','=https','--user-agent','hongli-web-data-validation/0.2','--write-out','\nHONG_LI_RESPONSE:%{http_code}|%{content_type}',url],{encoding:'buffer',timeout:23000,maxBuffer:4100000,windowsHide:true},(err,out)=>err?reject(err):resolve(out)));
+ const at=buffer.lastIndexOf(Buffer.from('\nHONG_LI_RESPONSE:'));if(at<0)throw Error('curl响应元数据缺失');
+ const [status,type]=buffer.subarray(at+18).toString().split('|');
+ if(!/^2\d\d$/.test(status))throw Error('HTTP '+status+' (curl)');
+ if(at>4000000)throw Error('Response too large');return decode(buffer.subarray(0,at),type,start,'curl');
+}
 async function request(url){
- const start=Date.now(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+ if(!Object.values(URLS).includes(url))throw Error('非允许的数据源URL');
+ const start=Date.now(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ let transportError;
  try{
   const r=await fetch(url,{signal:controller.signal,redirect:'error',headers:{'User-Agent':'hongli-web-data-validation/0.1','Accept':'application/json,text/html;q=0.9,*/*;q=0.8'}});
-  if(!r.ok)throw Error('HTTP '+r.status);const chunks=[];let bytes=0;
+  if(!r.ok){const e=Error('HTTP '+r.status);e.noFallback=true;throw e;}const chunks=[];let bytes=0;
   for await(const chunk of r.body){bytes+=chunk.length;if(bytes>4000000)throw Error('Response too large');chunks.push(chunk);}
-  const buffer=Buffer.concat(chunks),charset=/charset\s*=\s*["']?([^;\s"']+)/i.exec(r.headers.get('content-type')||'')?.[1]||'utf-8';
-  return {text:new TextDecoder(charset).decode(buffer),bytes,sha256:crypto.createHash('sha256').update(buffer).digest('hex'),elapsedMs:Date.now()-start};
+  return decode(Buffer.concat(chunks),r.headers.get('content-type'),start,'fetch');
+ }catch(e){if(e.noFallback)throw e;transportError=errorDetail(e);
  }finally{clearTimeout(timer);}
+ // Independent HTTPS client for connectivity/runtime failures only. No retry around HTTP access denial.
+ try{return {...await curlRequest(url,start),transportWarning:transportError};}catch(e){throw Error('获取失败：fetch '+transportError+'；curl '+errorDetail(e));}
 }
 async function run(){
  const now=new Date(),result={schemaVersion:1,generatedAt:now.toISOString(),runtime:process.version,environment:process.env.GITHUB_ACTIONS==='true'?'github-actions':'local',purpose:'network-and-schema-validation-only',sources:{},checks:{},ready:false},raw={};
@@ -87,5 +101,5 @@ async function run(){
  if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## 510880 cloud data probe\n\nThis is a transport/schema check, not a trading decision or production readiness certificate. No raw market history or private account data is published.\n\n```json\n'+JSON.stringify(result,null,2)+'\n```\n');
  if(!result.ready)process.exitCode=1;return result;
 }
-module.exports={URLS,request,bars,dividends,managerCheck,calendar,expectedClose,compare};
+module.exports={URLS,request,bars,dividends,managerCheck,calendar,expectedClose,compare,errorDetail,decode};
 if(require.main===module)run().catch(e=>{console.error(e.message);process.exitCode=1;});

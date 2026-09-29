@@ -6,7 +6,7 @@ on:
     paths-ignore: ['DEVELOPMENT.md', 'README.md', 'cloud-probe.test.cjs', '.github/workflows/cloud-data-probe.yml']
   schedule:
     - cron: '5,15,25,35,45,55 7-9 * * 1-5'
-    - cron: '15 13 * * 1-5'
+    - cron: '15 10-14 * * 1-5'
     - cron: '35 1 * * 1-5'
 permissions:
   contents: read
@@ -26,12 +26,15 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Strategy and failure-mode tests
-        run: node --test cloud-probe.test.cjs model.test.cjs view-state.test.cjs
+        run: node --test cloud-probe.test.cjs model.test.cjs view-state.test.cjs dividend-policy.test.cjs
       - name: Fetch, validate and build atomic snapshot
+        id: snapshot
         run: node build.cjs
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
+    outputs:
+      data-status: ${{ steps.snapshot.outputs.data-status }}
   deploy:
     needs: build
     runs-on: ubuntu-24.04
@@ -45,3 +48,17 @@ jobs:
     steps:
       - uses: actions/deploy-pages@v4
         id: deployment
+  data-health:
+    name: Verify data health (not deployment)
+    needs: [build, deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Report data failure after publishing diagnostic page
+        env:
+          DATA_STATUS: ${{ needs.build.outputs.data-status }}
+        run: |
+          if [ "$DATA_STATUS" != "confirmed" ]; then
+            echo "::error::Website published, but data/review are not confirmed ($DATA_STATUS). Inspect build summary."
+            exit 1
+          fi

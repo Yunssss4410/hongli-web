@@ -32,6 +32,7 @@ function referenceData(raw,now,previous){
  }
  else if(raw.calendar){const cal=p.calendar(raw.calendar);expected=p.expectedClose(cal,now);calendar=makeCalendar(cal,previous?.calendar);}
  else{calendar=makeCalendar(null,previous?.calendar);const local=new Date(now.getTime()+8*3600000);let d=local.toISOString().slice(0,10);if(local.getUTCHours()<15)d=core.addDays(d,-1);for(let i=0;i<25;i++,d=core.addDays(d,-1)){if(calendar[d]===undefined)throw Error('已核验日历未覆盖 '+d);if(calendar[d]){expected=d;break;}}if(!expected)throw Error('已核验日历无可用收盘日');warnings.push('上交所网页暂不可达；使用已核验年度日历，不推测未知交易日');}
+ if(raw.dividendState){const ds=raw.dividendState;if(ds.status==='blocked')throw Error(ds.error);warnings.push(...ds.warnings);return {calendar,expected,events:ds.cache.events,warnings,referencePreview:ds.status==='preview'};}
  const events=raw.dividends?p.dividends(raw.dividends):baseline.events;
  // The live manager must still corroborate every accepted event, including count.
  p.managerCheck(raw.manager||'',events);assertEvents(events);
@@ -39,7 +40,7 @@ function referenceData(raw,now,previous){
  return {calendar,expected,events,warnings};
 }
 function assemble(raw,now,previous){
- const {calendar,expected,events,warnings}=referenceData(raw,now,previous);
+ const {calendar,expected,events,warnings,referencePreview}=referenceData(raw,now,previous);
  const feeds={};for(const k of ['sina','tencent'])if(raw[k])feeds[k]=p.bars(raw[k],k);
  const fresh=Object.keys(feeds).filter(k=>feeds[k].some(b=>b.date===expected));if(!fresh.length)throw Error('日线尚未到应有日期 '+expected);
  if(!feeds.sina)throw Error('新浪完整历史暂不可用；保留上次结果，禁止以短历史重新初始化RSI');
@@ -53,6 +54,6 @@ function assemble(raw,now,previous){
  for(let d=baseline.asof;d<=expected;d=core.addDays(d,1)){if(calendar[d]===undefined)throw Error('日历未覆盖 '+d);if(calendar[d]&&!rows.some(b=>b.date===d))throw Error('缺少交易日 '+d);}
  for(const b of rows){core.validateBar(b);if(previous?.acceptedHashes?.[b.date]&&previous.acceptedHashes[b.date]!==hash(b))throw Error('已发布日线被修订 '+b.date);}
  if(fresh.length===2){const alternate=core.prepare(rows.map(b=>{const q=feeds.tencent.find(x=>x.date===b.date);return q&&b.date>baseline.asof?{...b,volume:q.volume}:b;}),events),canonical=core.prepare(rows,events);for(const b of rows.slice(-80))if(core.weekday(b.date)===1){const a=core.review(canonical,b.date),b2=core.review(alternate,b.date);if(a&&b2&&a.confirm!==b2.confirm)throw Error('来源成交量精度改变R信号');}}
- return {snapshot,feeds,status:fresh.length===2?'confirmed':'provisional',audit:{...audit,matchedDays:matched,warnings},acceptedHashes:Object.fromEntries(rows.filter(b=>b.date>baseline.asof).map(b=>[b.date,hash(b)]))};
+ return {snapshot,feeds,status:fresh.length===2&&!referencePreview?'confirmed':'provisional',previewReason:referencePreview?'分红复核待完成；行情参考不推进策略':'单源行情待交叉复核',audit:{...audit,matchedDays:matched,warnings},acceptedHashes:Object.fromEntries(rows.filter(b=>b.date>baseline.asof).map(b=>[b.date,hash(b)]))};
 }
 module.exports={hash,canonicalize,historicalCheck,makeCalendar,assertEvents,volumeAgrees,referenceData,assemble};
