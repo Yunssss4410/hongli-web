@@ -2,6 +2,7 @@
 const fs=require('node:fs'),path=require('node:path');
 const p=require('./cloud-probe.cjs'),market=require('./market.cjs'),core=require('./strategy.cjs'),clock=require('./clock.cjs'),model=require('./model.cjs'),{chart}=require('./chart-domain.cjs'),contract=require('./contract.json');
 const SITE='https://yunssss4410.github.io/hongli-web/snapshot.json';
+const {dailyQuote}=require('./daily.cjs');
 function versionedHtml(html,read){return html.replace(/(src|href)="(style\.css|app\.js|chart\.js|buy-limit\.js|view-state\.js)"/g,(_,attr,file)=>`${attr}="${file}?v=${market.hash(read(file)).slice(0,16)}"`);}
 async function previousSnapshot(){const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);try{const r=await fetch(SITE+'?check='+Date.now(),{signal:c.signal,cache:'no-store',redirect:'error'});if(r.status===404)return null;if(!r.ok)throw Error('无法读取上次发布快照 HTTP '+r.status);const text=await r.text();if(text.length>2000000)throw Error('快照过大');const s=JSON.parse(text);if(s.schemaVersion!==1||!s.generatedAt)throw Error('上次快照格式异常');return s;}finally{clearTimeout(t);}}
 async function acquire(previous,now){const raw={},sources={};await Promise.all(Object.entries(p.URLS).map(async([k,u])=>{if(k==='calendar'){const result=await require('./calendar-policy.cjs').acquireCalendar(previous,now);raw.calendarState=result;sources.calendar=result.source;return;}let error;for(let n=0;n<2;n++){try{const r=await p.request(u);raw[k]=r.text;const {text,...metadata}=r;sources[k]={status:'ok',...metadata};return;}catch(e){error=e.message;if(n===0)await new Promise(r=>setTimeout(r,1000));}}sources[k]={status:'error',error};}));return {raw,sources};}
@@ -20,7 +21,7 @@ function published(previous,now,raw,sources){
   for(const k of ['sina','tencent'])if(sources[k])sources[k]={...sources[k],expectedDate:s.asof,validation:sources[k].dataDate<s.asof?'lagging':result.status==='confirmed'?'verified':'pending'};
   const local=clock.shanghai(now),through=local.time>='15:00:00'?local.date:core.addDays(local.date,-1);
   if(result.status==='provisional'){
-   output.status='provisional';output.error=ds.error;output.preview={asof:s.asof,chart:chart(s,now),reason:result.previewReason};
+   output.status='provisional';output.error=ds.error;output.preview={asof:s.asof,chart:chart(s,now),daily:dailyQuote(s),reason:result.previewReason};
    let tue=through;while(core.weekday(tue)!==1)tue=core.addDays(tue,-1);
    output.preview.review={date:tue,signal:core.review(core.prepare(s.bars,s.events),tue)};
    return output;
@@ -36,6 +37,7 @@ function published(previous,now,raw,sources){
   const already=old?.reviewKey===reportKey;
   const liveReview=latest?.date===local.date&&local.time>='15:00:00';
   const confirmed={asof:s.asof,verifiedAt:now.toISOString(),close:s.bars.at(-1).close,model:simulation,chart:chart(s,now),quote:referenceQuote(s,simulation,now),reviewKey:reportKey,reviewPublishedAt:already?old.reviewPublishedAt:now.toISOString(),reviewOrigin:already?old.reviewOrigin:liveReview?'当日发布':'历史补算参考'};
+  confirmed.daily=dailyQuote(s);
   output.status='confirmed';output.confirmed=confirmed;output.acceptedHashes=result.acceptedHashes;
   const summary={at:now.toISOString(),asof:s.asof,state:simulation.state.shares?'holding':'empty',pending:simulation.state.pending,reviewDate:latest?.date||null};
   if(!old||old.asof!==s.asof||JSON.stringify(old.model.state)!==JSON.stringify(simulation.state))output.publicationLog=[...output.publicationLog,summary].slice(-120);

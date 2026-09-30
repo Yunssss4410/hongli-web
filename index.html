@@ -2,6 +2,13 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#21483f"><meta name="description" content="510880红利簿：收盘数据、周二复盘及严格执行假设下的策略参考。"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"><title>红利簿 · 策略参考</title><link rel="stylesheet" href="style.css"><script defer src="buy-limit.js"></script><script defer src="chart.js"></script><script defer src="view-state.js"></script><script defer src="app.js"></script></head>
 <body><main>
 <header><div><h1>红利簿</h1><p>510880 / R波段 · 手机版</p></div><button id="refresh">刷新页面</button></header>
+<section class="card daily-card" aria-labelledby="daily-title">
+<div class="section-title"><h2 id="daily-title">510880 · 每日收盘</h2><span id="daily-status" class="daily-badge" role="status">正在读取</span></div>
+<div class="daily-price-row"><strong id="daily-price">—</strong><span id="daily-change">—</span></div>
+<p id="daily-date" class="caption">收盘日期 — · 非实时行情</p>
+<div class="daily-grid"><div><small>开盘</small><strong id="daily-open">—</strong></div><div><small>最高</small><strong id="daily-high">—</strong></div><div><small>最低</small><strong id="daily-low">—</strong></div><div><small>前收</small><strong id="daily-previous">—</strong></div></div>
+<p id="daily-note" class="caption">每日收盘后更新；行情涨跌不等于策略买卖信号。</p>
+</section>
 <p class="caption">策略参考仓位 · 假设严格执行，不代表实际账户</p>
 <section id="status-card" class="card headline"><div class="eyebrow">当下 / NEXT ACTION</div><h2 id="headline">正在读取已发布数据</h2><p id="action">核验完成前不提供操作提示。</p><p id="state-detail" class="muted"></p><div id="quote" hidden><label for="premium">买入限价参考 · 加价 <input id="premium" type="number" min="0" max="5" step="0.01" value="1"> %</label><strong id="limit"></strong><p id="quote-note" class="caption"></p><p class="caption">这是限价上限，不是预计成交价；不保证成交。请在券商核对交易日、除息及价格限制。</p></div></section>
 <div id="health" class="health" role="status" aria-live="polite">● 正在检查数据状态</div>

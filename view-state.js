@@ -25,4 +25,24 @@ function sourceView(key,item={}){
  }
  return {tone:item.validation==='verified'?'ok':item.status==='error'||item.validation==='invalid'?'upper':'warn',label:item.validation==='verified'?'已核验':item.validation==='invalid'?'核验未通过':item.status==='ok'?'已获取 · 待核验':item.error||'未检查'};
 }
-const api={freshness,health,sourceView};if(typeof module==='object'&&module.exports)module.exports=api;else root.webState=api;})(typeof window==='object'?window:globalThis);
+function dailyState(s,now=new Date(),loadError=null){
+ const f=freshness(s,now),preview=Boolean(s.preview?.daily),c=s.confirmed;
+ let data=s.preview?.daily||c?.daily||(c?{date:c.asof,close:c.close}:null);
+ const complete=data&&['open','high','low','close','previousClose','change','changePercent'].every(k=>Number.isFinite(data[k]));
+ let label,tone='warn';
+ if(loadError){label='连接失败 · 保留旧行情';tone='error';}
+ else if(s.testOnly)label='测试数据 · 不用于交易';
+ else if(!Number.isFinite(Date.parse(s.generatedAt))||Date.parse(s.generatedAt)>now.getTime()+300000){label='时间异常 · 暂停展示';data=null;tone='error';}
+ else if(s.calendar?.[f.date]===undefined||!f.expected)label='日历待核验';
+ else if(data?.date>f.expected){label='收盘日期异常 · 暂停展示';data=null;tone='error';}
+ else if(s.status==='error'){label='核验受阻 · 保留旧行情';tone='error';}
+ else if(!data)label='等待收盘数据';
+ else if(data.date<f.expected)label=s.calendar[f.date]&&f.time>='15:00:00'?'今日待更新':'最近收盘待更新';
+ else if(preview||s.status!=='confirmed')label='初步行情 · 待复核';
+ else if(!complete)label='日行情明细待补齐';
+ else if(!s.calendar[f.date]){label='休市 · 最近收盘已复核';tone='ok';}
+ else if(f.time<'15:00:00'){label='今日收盘后更新';tone='neutral';}
+ else{label='今日已更新 · 已复核';tone='ok';}
+ return {data,label,tone,preview,rest:s.calendar?.[f.date]===false};
+}
+const api={freshness,health,sourceView,dailyState};if(typeof module==='object'&&module.exports)module.exports=api;else root.webState=api;})(typeof window==='object'?window:globalThis);

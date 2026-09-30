@@ -2,8 +2,18 @@
 const names={sina:'新浪日线',tencent:'腾讯日线',dividends:'东方财富分红',manager:'基金管理人',calendar:'上交所日历'},why={lower:'触下轨且R确认通过',lower_delayed:'R等待完成',upper:'触及上轨',safety:'均价8.5%保护',recovery:'冻结恢复条件满足',no_lower:'观察窗口未触下轨',no_upper:'观察窗口未触上轨'};
 const dateTime=s=>s?new Date(s).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'未知';
 function expected(calendar,now=new Date()){const d=new Date(now.getTime()+8*3600000);if(d.getUTCHours()<15)d.setUTCDate(d.getUTCDate()-1);for(let i=0;i<25;i++,d.setUTCDate(d.getUTCDate()-1)){const s=d.toISOString().slice(0,10);if(calendar[s]===undefined)return null;if(calendar[s])return s;}return null;}
+function renderDaily(s){
+ const state=window.webState.dailyState(s,new Date(),loadError),d=state.data,sign=(n,digits)=>Number.isFinite(n)?(n>0?'+':'')+n.toFixed(digits):'—';
+ text('daily-status',state.label);$('daily-status').className='daily-badge '+state.tone;
+ text('daily-price',f(d?.close));text('daily-change',d&&Number.isFinite(d.change)&&Number.isFinite(d.changePercent)?`${sign(d.change,3)} 元 / ${sign(d.changePercent,2)}%`:'涨跌待补齐');
+ const direction=d?.change>0?'upper':d?.change<0?'lower':'';$('daily-price').className=direction;$('daily-change').className=direction;
+ text('daily-date',`收盘日期 ${d?.date||'—'} · ${state.rest?'今日休市 · ':''}非实时行情`);
+ for(const k of ['open','high','low'])text('daily-'+k,f(d?.[k]));text('daily-previous',f(d?.previousClose));
+ text('daily-note',`${state.preview?'初步行情仅供参考，不推进策略。':loadError||s.status==='error'?'以上为旧行情，仅供回顾。':'每日收盘后更新；不作为独立买卖信号。'} 涨跌按未复权价格较${d?.previousDate||'上一交易日'}收盘计算。${d?.distribution?' 当日每份除息 '+f(d.distribution)+' 元，价格跌幅含除息影响，不等于投资总回报。':''}`);
+}
 function render(){
  if(!snapshot)return;const s=snapshot,c=s.confirmed,st=c?.model?.state,plan=st?.pending,expectedDate=expected(s.calendar||{});
+ renderDaily(s);
  const fresh=window.webState.health(s,new Date(),loadError);
  const local=new Date(Date.now()+8*3600000).toISOString(),date=local.slice(0,10),time=local.slice(11,19);
  const dueUnverified=fresh.due;
@@ -37,6 +47,6 @@ function render(){
  text('audit',s.audit?`历史指纹 ${s.audit.bars}根；关键复盘对照 ${s.audit.golden}次；双源重叠 ${s.audit.matchedDays}日。获取成功不代表所有检查通过。`:'暂无本轮审计通过记录。');text('rules',`规则 ${s.contract?.id||'未知'} · SHA-256 ${s.contractHash||'未知'}`);
 }
 function updateQuote(){const q=snapshot?.confirmed?.quote;if(q?.status!=='ready')return;try{const price=window.buyLimit.calculate(q.reference,$('premium').value);text('limit',f(price)+' 元');text('quote-note',`${q.referenceDate} 收盘 ${f(q.close)}${q.distribution?' − 除息 '+f(q.distribution):''} ×（1 + ${$('premium').value}%），向上取至0.001元。仅本次页面试算。`);}catch(e){text('limit','比例无效');text('quote-note',e.message);}}
-async function load(){if(loading)return;loading=true;$('refresh').disabled=true;const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);try{const r=await fetch('snapshot.json?t='+Date.now(),{cache:'no-store',signal:abort.signal});if(!r.ok)throw Error('HTTP '+r.status);const s=await r.json();if(s.schemaVersion!==1||!Number.isFinite(Date.parse(s.generatedAt)))throw Error('数据格式异常');snapshot=s;loadError=null;render();}catch(e){loadError=e.message;if(snapshot)render();else{text('health','● 无法读取最新云端快照：'+e.message+'。请稍后刷新。');$('health').className='health error';text('headline','连接失败 · 当前状态未知');text('action','不以缓存内容作新的交易依据。');$('quote').hidden=true;$('recovery-help').hidden=false;}}finally{clearTimeout(timer);loading=false;$('refresh').disabled=false;}}
+async function load(){if(loading)return;loading=true;$('refresh').disabled=true;const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);try{const r=await fetch('snapshot.json?t='+Date.now(),{cache:'no-store',signal:abort.signal});if(!r.ok)throw Error('HTTP '+r.status);const s=await r.json();if(s.schemaVersion!==1||!Number.isFinite(Date.parse(s.generatedAt)))throw Error('数据格式异常');snapshot=s;loadError=null;render();}catch(e){loadError=e.message;if(snapshot)render();else{text('daily-status','连接失败 · 尚无行情');$('daily-status').className='daily-badge error';text('daily-note','未获取到收盘数据，请稍后刷新。');text('health','● 无法读取最新云端快照：'+e.message+'。请稍后刷新。');$('health').className='health error';text('headline','连接失败 · 当前状态未知');text('action','不以缓存内容作新的交易依据。');$('quote').hidden=true;$('recovery-help').hidden=false;}}finally{clearTimeout(timer);loading=false;$('refresh').disabled=false;}}
 $('refresh').onclick=load;$('range').onchange=render;$('premium').oninput=updateQuote;document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});setInterval(()=>{if(!document.hidden)load();},60000);load();
 })();
