@@ -1,23 +1,24 @@
-(function(){'use strict';const $=id=>document.getElementById(id),f=(n,d=3)=>Number.isFinite(n)?n.toFixed(d):'—',text=(id,s)=>{$(id).textContent=s;};let snapshot=null,loading=false;
+(function(){'use strict';const $=id=>document.getElementById(id),f=(n,d=3)=>Number.isFinite(n)?n.toFixed(d):'—',text=(id,s)=>{$(id).textContent=s;};let snapshot=null,loading=false,loadError=null;
 const names={sina:'新浪日线',tencent:'腾讯日线',dividends:'东方财富分红',manager:'基金管理人',calendar:'上交所日历'},why={lower:'触下轨且R确认通过',lower_delayed:'R等待完成',upper:'触及上轨',safety:'均价8.5%保护',recovery:'冻结恢复条件满足',no_lower:'观察窗口未触下轨',no_upper:'观察窗口未触上轨'};
 const dateTime=s=>s?new Date(s).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'未知';
 function expected(calendar,now=new Date()){const d=new Date(now.getTime()+8*3600000);if(d.getUTCHours()<15)d.setUTCDate(d.getUTCDate()-1);for(let i=0;i<25;i++,d.setUTCDate(d.getUTCDate()-1)){const s=d.toISOString().slice(0,10);if(calendar[s]===undefined)return null;if(calendar[s])return s;}return null;}
 function render(){
- if(!snapshot)return;const s=snapshot,c=s.confirmed,st=c?.model?.state,plan=st?.pending,expectedDate=expected(s.calendar||{}),future=Date.parse(s.generatedAt)>Date.now()+300000;
- const fresh=window.webState.freshness(s),stale=fresh.stale,valid=s.status==='confirmed'&&!stale&&!s.testOnly;
+ if(!snapshot)return;const s=snapshot,c=s.confirmed,st=c?.model?.state,plan=st?.pending,expectedDate=expected(s.calendar||{});
+ const fresh=window.webState.health(s,new Date(),loadError);
  const local=new Date(Date.now()+8*3600000).toISOString(),date=local.slice(0,10),time=local.slice(11,19);
  const dueUnverified=fresh.due;
- const ready=valid&&!dueUnverified;
+ const ready=fresh.ready;
  $('quote').hidden=true;
- text('health',`${ready?'● 数据复核通过':s.status==='error'?'● 数据异常':'● 待核验 / 等待更新'} · 收盘截至 ${c?.asof||'未知'}${expectedDate?' · 应有日期 '+expectedDate:''}\n${s.error||(!ready?(s.testOnly?'开发测试快照，不能用于交易':future?'设备时间或数据时间异常':dueUnverified?'已到执行时点，开盘执行数据待核验':fresh.reviewStale?'本周二复盘尚未完成':s.status==='provisional'?'先到数据仅供预览，尚未推进正式策略':'请勿把旧状态当作最新操作依据'):'最后云端检查 '+dateTime(s.generatedAt))}`);
+ text('health',`● ${fresh.label} · 策略已确认至 ${c?.asof||'未知'}${expectedDate?' · 应有日期 '+expectedDate:''}\n${fresh.reason}\n最后云端检查 ${dateTime(s.generatedAt)}${s.preview?' · 行情预览至 '+s.preview.asof:''}`);
  if(s.audit?.warnings?.length)$('health').textContent+='\n'+s.audit.warnings.join('；');
- $('health').className='health '+(ready?(s.audit?.warnings?.length?'warn':'ok'):s.status==='error'?'error':'warn');
+ $('health').className='health '+fresh.tone;
+ $('recovery-help').hidden=ready;
  if(!st){text('headline','策略状态尚未就绪');text('action','数据核验及历史回放完成后展示，当前不提供交易指令。');text('state-detail','');}
  else{
   const stateName=st.shares?'模拟持仓':st.frozen?'空仓冻结':st.waiting?'空仓 · R等待':'空仓等待';
   text('headline',ready?(plan?(plan.side==='BUY'?'待买入':'待卖出'):st.shares?'持仓等待':st.frozen?'空仓冻结':st.waiting?'等待R观察完成':'空仓等待'):'数据待核验 · 暂不提供新操作');
   text('action',plan?`${ready?'已锁定计划':'保留此前计划'}：${plan.targetDate} 开盘${plan.side==='BUY'?'买入':'卖出'}；${why[plan.reason]||plan.reason}。${dueUnverified?'执行尚未核验，不能视为已成交。':''}`:ready?(st.shares?'未触发退出条件，按规则继续观察。':st.frozen?'等待周二恢复条件；不是自动到期解除。':st.waiting?'等待下一次有效周二复盘，不要求再次触下轨。':'尚无买入信号，继续等待。'):'保留最后一次确认状态，等待数据恢复。');
-  text('state-detail',`参考状态：${stateName} · 从2020年起空仓模拟${st.average?' · 模拟均价 '+f(st.average)+' · 保护价 '+f(st.average*.915):''}${st.protection==='WARNING'?' · 已达到8%预警':''}${st.executionAsOf?' · 开盘核验至 '+st.executionAsOf:''}`);
+  text('state-detail',`${ready?'参考状态':'此前已确认状态'}：${stateName} · 确认截至 ${c.asof} · 从2020年起空仓模拟${st.average?' · 模拟均价 '+f(st.average)+' · 保护价 '+f(st.average*.915):''}${st.protection==='WARNING'?' · 已达到8%预警':''}${st.executionAsOf?' · 开盘核验至 '+st.executionAsOf:''}`);
   const q=c.quote;if(ready&&q&&plan?.side==='BUY'&&plan.targetDate>=date){$('quote').hidden=false;if(q.status==='ready'&&!(date===q.targetDate&&time>='09:25:00')){$('premium').disabled=false;updateQuote();}else{$('premium').disabled=true;text('limit','等待可用报价');text('quote-note',q.referenceDate?`等待 ${q.referenceDate} 已核验收盘；不是用轨道价下单。`:'当前不显示可执行限价。');}}
  }
  const display=s.preview?.chart||c?.chart;window.drawWeekChart(display?.rows||[],c?.model?.trades||[],Number($('range').value),display?.asof);
@@ -32,10 +33,10 @@ function render(){
  text('timestamps',`云端生成 ${dateTime(s.generatedAt)}；已确认数据 ${c?.asof||'无'}；刷新页面不会启动云端抓取。`);
  if(Date.now()-Date.parse(s.generatedAt)>45*60000&&expectedDate&&(!c||c.asof<expectedDate))$('timestamps').textContent+=' 云端超过45分钟未更新且收盘数据落后，请检查任务排队/失败；定时任务不保证准点。';
  if(s.dividendCache?.managerVerifiedAt)$('timestamps').textContent+=' 分红管理人最近核验 '+dateTime(s.dividendCache.managerVerifiedAt)+'。';
- const sources=$('sources');sources.replaceChildren();for(const [k,label]of Object.entries(names)){const row=document.createElement('div');row.className='source';const a=document.createElement('span'),b=document.createElement('span');a.textContent=label;const item=s.sources?.[k];b.textContent=item?.status==='ok'?'● 获取成功':item?.error?'● '+item.error:'● 未检查';b.className=item?.status==='ok'?'ok':'upper';if(k==='calendar'&&item?.lastVerifiedAt){const good=['ok','cached'].includes(item.status),fallback=item.status==='fallback';b.textContent=good?'● 已核验日历可用':fallback?'● 在线核验失败，备用日历可用':'● 日历核验受阻，暂停新指令';b.className=good?'ok':fallback?'warn':'upper';const detail=document.createElement('small');detail.textContent=`覆盖至 ${item.coverageThrough||'未知'}；最近核验 ${dateTime(item.lastVerifiedAt)}。${item.error?'在线详情：'+item.error+'。':''}${item.nextCheckAt?'下次尝试不早于 '+dateTime(item.nextCheckAt)+'（以云端任务实际运行时间为准）。':''}`;b.append(detail);}row.append(a,b);sources.append(row);}
+ const sources=$('sources');sources.replaceChildren();for(const [k,label]of Object.entries(names)){const row=document.createElement('div');row.className='source';const a=document.createElement('span'),b=document.createElement('span');a.textContent=label;const item=s.sources?.[k],view=window.webState.sourceView(k,item);b.textContent='● '+view.label;b.className=view.tone;if(k==='calendar'&&item?.lastVerifiedAt){const good=['ok','cached'].includes(item.status),fallback=item.status==='fallback';b.textContent=good?'● 已核验日历可用':fallback?'● 在线核验失败，备用日历可用':'● 日历核验受阻，暂停新指令';b.className=good?'ok':fallback?'warn':'upper';const detail=document.createElement('small');detail.textContent=`覆盖至 ${item.coverageThrough||'未知'}；最近核验 ${dateTime(item.lastVerifiedAt)}。${item.error?'在线详情：'+item.error+'。':''}${item.nextCheckAt?'下次尝试不早于 '+dateTime(item.nextCheckAt)+'（以云端任务实际运行时间为准）。':''}`;b.append(detail);}row.append(a,b);sources.append(row);}
  text('audit',s.audit?`历史指纹 ${s.audit.bars}根；关键复盘对照 ${s.audit.golden}次；双源重叠 ${s.audit.matchedDays}日。获取成功不代表所有检查通过。`:'暂无本轮审计通过记录。');text('rules',`规则 ${s.contract?.id||'未知'} · SHA-256 ${s.contractHash||'未知'}`);
 }
 function updateQuote(){const q=snapshot?.confirmed?.quote;if(q?.status!=='ready')return;try{const price=window.buyLimit.calculate(q.reference,$('premium').value);text('limit',f(price)+' 元');text('quote-note',`${q.referenceDate} 收盘 ${f(q.close)}${q.distribution?' − 除息 '+f(q.distribution):''} ×（1 + ${$('premium').value}%），向上取至0.001元。仅本次页面试算。`);}catch(e){text('limit','比例无效');text('quote-note',e.message);}}
-async function load(){if(loading)return;loading=true;$('refresh').disabled=true;const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);try{const r=await fetch('snapshot.json?t='+Date.now(),{cache:'no-store',signal:abort.signal});if(!r.ok)throw Error('HTTP '+r.status);const s=await r.json();if(s.schemaVersion!==1||!s.generatedAt)throw Error('数据格式异常');snapshot=s;render();}catch(e){text('health','● 无法读取最新云端快照：'+e.message+'。页面旧内容仅供回顾。');$('health').className='health error';text('headline','连接失败 · 当前状态未知');text('action','请稍后刷新，不以缓存内容作新的交易依据。');$('quote').hidden=true;}finally{clearTimeout(timer);loading=false;$('refresh').disabled=false;}}
+async function load(){if(loading)return;loading=true;$('refresh').disabled=true;const abort=new AbortController(),timer=setTimeout(()=>abort.abort(),15000);try{const r=await fetch('snapshot.json?t='+Date.now(),{cache:'no-store',signal:abort.signal});if(!r.ok)throw Error('HTTP '+r.status);const s=await r.json();if(s.schemaVersion!==1||!Number.isFinite(Date.parse(s.generatedAt)))throw Error('数据格式异常');snapshot=s;loadError=null;render();}catch(e){loadError=e.message;if(snapshot)render();else{text('health','● 无法读取最新云端快照：'+e.message+'。请稍后刷新。');$('health').className='health error';text('headline','连接失败 · 当前状态未知');text('action','不以缓存内容作新的交易依据。');$('quote').hidden=true;$('recovery-help').hidden=false;}}finally{clearTimeout(timer);loading=false;$('refresh').disabled=false;}}
 $('refresh').onclick=load;$('range').onchange=render;$('premium').oninput=updateQuote;document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});setInterval(()=>{if(!document.hidden)load();},60000);load();
 })();

@@ -7,13 +7,17 @@ async function previousSnapshot(){const c=new AbortController(),t=setTimeout(()=
 async function acquire(previous,now){const raw={},sources={};await Promise.all(Object.entries(p.URLS).map(async([k,u])=>{if(k==='calendar'){const result=await require('./calendar-policy.cjs').acquireCalendar(previous,now);raw.calendarState=result;sources.calendar=result.source;return;}let error;for(let n=0;n<2;n++){try{const r=await p.request(u);raw[k]=r.text;const {text,...metadata}=r;sources[k]={status:'ok',...metadata};return;}catch(e){error=e.message;if(n===0)await new Promise(r=>setTimeout(r,1000));}}sources[k]={status:'error',error};}));return {raw,sources};}
 function referenceQuote(s,simulation,now){const pending=simulation.state.pending;if(!pending||pending.side!=='BUY')return null;const local=clock.shanghai(now);if(pending.targetDate<local.date||(pending.targetDate===local.date&&local.time>='09:25:00'))return {status:'expired',targetDate:pending.targetDate};let ref=core.addDays(pending.targetDate,-1);for(let i=0;i<25;i++,ref=core.addDays(ref,-1)){if(s.calendar[ref]===undefined)return {status:'unknown_calendar'};if(s.calendar[ref])break;}if(s.asof<ref)return {status:'waiting',referenceDate:ref,targetDate:pending.targetDate};const bar=s.bars.find(b=>b.date===ref);if(!bar)return {status:'missing'};const distribution=s.events.filter(e=>e.ex_date===pending.targetDate).reduce((a,e)=>a+e.cash_per_share,0);return {status:'ready',referenceDate:ref,targetDate:pending.targetDate,close:bar.close,distribution,reference:bar.close-distribution,defaultPercent:1};}
 function published(previous,now,raw,sources){
+ sources=structuredClone(sources);
+ for(const k of ['sina','tencent'])if(raw[k]){try{sources[k]={...sources[k],dataDate:p.bars(raw[k],k).at(-1).date,validation:'pending'};}catch(e){sources[k]={...sources[k],validation:'invalid',validationError:e.message};}}
  const output={schemaVersion:1,version:contract.version,generatedAt:now.toISOString(),status:'error',sources,error:null,contract,contractHash:market.hash(contract),calendar:previous?.calendar||{},confirmed:previous?.confirmed||null,preview:null,acceptedHashes:previous?.acceptedHashes||{},publicationLog:previous?.publicationLog||[]};
  output.calendarCache=raw.calendarState?.cache||previous?.calendarCache||null;
  const ds=require('./dividend-policy.cjs').evaluate(raw,sources,previous,now);
  output.dividendCache=ds.cache;output.dividendHealth=ds;
+ for(const k of ['dividends','manager'])if(sources[k])sources[k]={...sources[k],validation:ds.checks[k]?.status||'pending'};
  raw={...raw,dividendState:ds};
  try{
   const result=market.assemble(raw,now,previous),s=result.snapshot;output.calendar=s.calendar;output.expected=s.asof;output.audit=result.audit;
+  for(const k of ['sina','tencent'])if(sources[k])sources[k]={...sources[k],expectedDate:s.asof,validation:sources[k].dataDate<s.asof?'lagging':result.status==='confirmed'?'verified':'pending'};
   const local=clock.shanghai(now),through=local.time>='15:00:00'?local.date:core.addDays(local.date,-1);
   if(result.status==='provisional'){
    output.status='provisional';output.error=ds.error;output.preview={asof:s.asof,chart:chart(s,now),reason:result.previewReason};
@@ -38,21 +42,22 @@ function published(previous,now,raw,sources){
   return output;
  }catch(e){output.error=e.message;return output;}
 }
-async function build(){
+async function build(options={}){
  const fixtureArg=process.argv.find(a=>a.startsWith('--fixture='));
  const fixture=fixtureArg?JSON.parse(fs.readFileSync(fixtureArg.slice(10),'utf8')):null;
  if(fixture&&process.env.GITHUB_ACTIONS)throw Error('云端发布禁止测试数据');
  const now=fixture?new Date(fixture.now):new Date();
- const previous=fixture?.previous||(fixture?null:await previousSnapshot());
+ const previous=options.previous!==undefined?options.previous:fixture?.previous||(fixture?null:await previousSnapshot());
  const {raw,sources}=fixture?fixture:await acquire(previous,now);
  const output=published(previous,now,raw,sources);
+ if(options.recovery)output.recovery=options.recovery;
  if(fixture)output.testOnly=true;
  fs.mkdirSync('site',{recursive:true});
  for(const f of ['index.html','style.css','app.js','chart.js','buy-limit.js','view-state.js'])fs.copyFileSync(f,path.join('site',f));
  fs.writeFileSync('site/index.html',versionedHtml(fs.readFileSync('index.html','utf8'),f=>fs.readFileSync(f,'utf8')));
  fs.writeFileSync('site/snapshot.json',JSON.stringify(output));fs.writeFileSync('site/.nojekyll','');
  fs.mkdirSync('validation-output',{recursive:true});
- const report={status:output.status,asof:output.confirmed?.asof||null,audit:output.audit,error:output.error,sources,bytes:fs.statSync('site/snapshot.json').size};
+ const report={status:output.status,asof:output.confirmed?.asof||null,audit:output.audit,error:output.error,sources:output.sources,recovery:output.recovery,bytes:fs.statSync('site/snapshot.json').size};
  fs.writeFileSync('validation-output/build-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
  if(process.env.GITHUB_OUTPUT)fs.appendFileSync(process.env.GITHUB_OUTPUT,'data-status='+output.status+'\n');
  if(output.status!=='confirmed'&&process.env.GITHUB_ACTIONS)console.log('::warning::行情/复盘未完成确认；网站将保留旧策略并发布诊断，详见数据健康任务');
@@ -60,5 +65,5 @@ async function build(){
  // Diagnostic publication on a source failure is intentional; no stale state becomes a new instruction.
  return output;
 }
-module.exports={published,referenceQuote,versionedHtml,acquire};
+module.exports={published,referenceQuote,versionedHtml,acquire,build};
 if(require.main===module)build().catch(e=>{console.error(e.message);process.exitCode=1;});

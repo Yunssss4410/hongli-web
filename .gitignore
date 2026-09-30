@@ -8,3 +8,4 @@ local-fixture.json
 validation-output/
 validate-local.cjs
 dev-server.cjs
+recovery-seed/

@@ -26,15 +26,22 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Strategy and failure-mode tests
-        run: node --test cloud-probe.test.cjs model.test.cjs view-state.test.cjs dividend-policy.test.cjs
+        run: node --test *.test.cjs
       - name: Fetch, validate and build atomic snapshot
         id: snapshot
         run: node build.cjs
+      - name: Preserve state and conflict locks for recovery
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-seed
+          path: site/snapshot.json
+          retention-days: 1
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
     outputs:
       data-status: ${{ steps.snapshot.outputs.data-status }}
+      snapshot-created: ${{ steps.snapshot.outcome == 'success' }}
   deploy:
     needs: build
     runs-on: ubuntu-24.04
@@ -50,15 +57,60 @@ jobs:
         id: deployment
   data-health:
     name: Verify data health (not deployment)
-    needs: [build, deploy]
+    needs: [build, deploy, recover]
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Report data failure after publishing diagnostic page
         env:
-          DATA_STATUS: ${{ needs.build.outputs.data-status }}
+          DATA_STATUS: ${{ needs.recover.result == 'success' && needs.recover.outputs.data-status || needs.build.outputs.data-status }}
+          INITIAL_DEPLOY: ${{ needs.deploy.result }}
+          RECOVERY_RESULT: ${{ needs.recover.result }}
         run: |
-          if [ "$DATA_STATUS" != "confirmed" ]; then
-            echo "::error::Website published, but data/review are not confirmed ($DATA_STATUS). Inspect build summary."
+          if [ "$DATA_STATUS" != "confirmed" ] || { [ "$INITIAL_DEPLOY" != "success" ] && [ "$RECOVERY_RESULT" != "success" ]; }; then
+            echo "::error::Data confirmation or deployment incomplete ($DATA_STATUS). Inspect build/recovery summary; old page may remain."
             exit 1
           fi
+  recover:
+    name: Bounded recovery and redeploy
+    needs: [build, deploy]
+    if: ${{ always() && !cancelled() && (needs.build.outputs.data-status != 'confirmed' || needs.deploy.result != 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      data-status: ${{ steps.snapshot.outputs.data-status }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Revalidate code before recovery
+        run: node --test *.test.cjs
+      - name: Restore first attempt including conflict locks
+        if: needs.build.outputs.snapshot-created == 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: recovery-seed
+          path: recovery-seed
+      - name: Retry until confirmed or bounded budget exhausted
+        id: snapshot
+        run: node recover.cjs
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          name: github-pages-recovery
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
+        with:
+          artifact_name: github-pages-recovery
