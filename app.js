@@ -32,12 +32,18 @@ function render(){
   const q=c.quote;if(ready&&q&&plan?.side==='BUY'&&plan.targetDate>=date){$('quote').hidden=false;if(q.status==='ready'&&!(date===q.targetDate&&time>='09:25:00')){$('premium').disabled=false;updateQuote();}else{$('premium').disabled=true;text('limit','等待可用报价');text('quote-note',q.referenceDate?`等待 ${q.referenceDate} 已核验收盘；不是用轨道价下单。`:'当前不显示可执行限价。');}}
  }
  const display=s.preview?.chart||c?.chart;window.drawWeekChart(display?.rows||[],c?.model?.trades||[],Number($('range').value),display?.asof);
- text('chart-meta',display?`每日收盘更新至 ${display.asof} · 收盘 ${f(display.close)} · ${display.partial?'最新周未完成':'最新周完整'}${s.preview?' · '+(s.preview.reason||'待复核预览'):''} · 非实时行情`:'暂无可展示的已获取行情');
+ text('chart-meta',display?`每日收盘更新至 ${display.asof} · 收盘 ${f(display.close)} · 最近一根${display.partial?'未完成':'完整'}周K（${display.sessions??display.rows?.at(-1)?.sessions??'—'}个交易日）${display.noCurrentWeek?' · 本周尚无已收盘K线':''}${s.preview?' · '+(s.preview.reason||'待复核预览'):''} · 非实时行情`:'暂无可展示的已获取行情');
  const report=c?.model?.latestReview,r=report?.signal;
  text('review-title',report?report.date+' · 周二复盘':'周二复盘');text('review-origin',c?`${c.reviewOrigin} · 发布于 ${dateTime(c.reviewPublishedAt)} · 不随每日K线改写`:'');
  text('review-action',r?`当次决定：${({BUY:'安排买入',SELL:'安排卖出',HOLD:'保持当时状态',WAIT_R:'进入R等待',Blocked:'已有待执行计划',SAFETY_SELL:'保护清仓'})[report.decision?.action]||'待核验'} · ${why[report.decision?.reason]||report.decision?.reason||''}`:'该周没有有效观察，或尚无已确认复盘；不消耗R等待。');
  text('review-lower',r?`${r.lower_touch?'已触及':'未触及'} · ${f(r.lower,4)}`:'—');text('review-upper',r?`${r.upper_touch?'已触及':'未触及'} · ${f(r.upper,4)}`:'—');text('review-r',r?`${r.confirm?'通过':'未通过'} · RSI ${f(r.rsi,1)} / 量比 ${f(r.volume_ratio,2)}`:'—');
  text('review-detail',r?`观察 ${r.window_start}～${r.asof}；最低${f(r.windowLow)}，最高${f(r.windowHigh)}；拟合${r.fit_start}～${r.fit_end}，${r.fit_bars}完整周；中轨${f(r.middle,4)}。空仓时触上轨不产生卖出。`:'无有效计算依据');
+ if(report?.decision?.action==='SKIP_HOLIDAY'){
+  text('review-action','本次普通复盘已跳过 · '+report.decision.reason);
+  for(const k of ['lower','upper','r'])text('review-'+k,'本次不判断');
+  text('review-detail','周二休市但周一开市时使用周一数据；周一、周二均休市则跳过，不借用周三至周五行情。短交易周照常生成周K，整周休市不造K线。已有计划按已核验交易日历执行，持仓每日保护不取消。');
+  if(ready&&!plan)text('action','周一、周二均休市，本次普通复盘已跳过；仓位、R等待与冻结状态保留。等待下一有效周二，开市后仍每日检查保护。');
+ }
  $('preview-note').hidden=!s.preview;text('preview-note',s.preview?`已有 ${s.preview.asof} 初步行情；${s.preview.review?.date||''} 初步观察仅参考，不改写本卡正式记录、不推进R等待。`:'');
  const list=$('trades');list.replaceChildren();for(const t of (c?.model?.trades||[]).slice(-12).reverse()){const row=document.createElement('div');row.className='trade';for(const value of [t.date,t.side==='BUY'?'模拟买入':'模拟卖出',f(t.price)+'元']){const el=document.createElement('span');el.textContent=value;row.append(el);}const note=document.createElement('small');note.textContent=`信号 ${t.nominal} · ${why[t.reason]||t.reason} · 历史回放，非真实成交`;row.append(note);list.append(row);}if(!list.children.length)list.textContent='暂无已核验模拟记录。';
  text('timestamps',`云端生成 ${dateTime(s.generatedAt)}；已确认数据 ${c?.asof||'无'}；刷新页面不会启动云端抓取。`);

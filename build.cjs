@@ -27,6 +27,7 @@ function published(previous,now,raw,sources){
    return output;
   }
   let simulation=model.replay(s,{evaluationThrough:through});
+  if(simulation.latestReview?.decision?.action==='Unknown')throw Error('最新周二有交易观察但复盘依据不足，不能确认新策略状态');
   const pending=simulation.state.pending;
   if(pending?.targetDate===local.date&&local.time>='09:35:00'&&s.calendar[local.date]){
    const a=result.feeds.sina.find(b=>b.date===local.date),b=result.feeds.tencent.find(b=>b.date===local.date);

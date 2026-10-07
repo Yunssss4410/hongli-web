@@ -35,6 +35,6 @@ function chart(snapshot,now){
     raw:{open:days[0].open,high:rawHigh,low:rawLow,close:at.close,highDates:days.filter(b=>Math.abs(b.high-rawHigh)<1e-8).map(b=>b.date),lowDates:days.filter(b=>Math.abs(b.low-rawLow)<1e-8).map(b=>b.date)},previousClose,previousDate:prev?.date??null,change,changePct:previousClose>0?change/previousClose*100:null,dividend,
     lower:band?band.lower-shift:null,middle:band?band.middle-shift:null,upper:band?band.upper-shift:null,fitEnd:band?.fitEnd||null,partial};
  });
- return {rows:projected,asof:last.date,expected,close:last.close,partial:projected.at(-1).partial,week:lastWeek};
+ return {rows:projected,asof:last.date,expected,close:last.close,partial:projected.at(-1).partial,week:lastWeek,sessions:projected.at(-1).sessions,noCurrentWeek:lastWeek<core.monday(local.date)};
 }
 module.exports={chart,bounds};

@@ -4,7 +4,7 @@
  const review=new Date(at);while(review.getUTCDay()!==2)review.setUTCDate(review.getUTCDate()-1);
  const expectedReview=review.toISOString().slice(0,10);let expected=null;
  for(let i=0;i<25;i++,at.setUTCDate(at.getUTCDate()-1)){const day=at.toISOString().slice(0,10);if(s.calendar?.[day]===undefined)break;if(s.calendar[day]){expected=day;break;}}
- const c=s.confirmed,p=c?.model?.state?.pending,reviewStale=!c?.model?.latestReview||c.model.latestReview.date<expectedReview;
+ const c=s.confirmed,p=c?.model?.state?.pending,latest=c?.model?.latestReview,reviewStale=!latest||latest.date<expectedReview||latest.decision?.action==='Unknown';
  const due=Boolean(p&&(p.targetDate<date||(p.targetDate===date&&time>='09:35:00')));
  const generated=Date.parse(s.generatedAt);
  const stale=!expected||!c||c.asof<expected||!Number.isFinite(generated)||generated>now.getTime()+300000||reviewStale;

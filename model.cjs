@@ -1,5 +1,6 @@
 'use strict';
 const core=require('./strategy.cjs'),contract=require('./contract.json');
+const {observation,HOLIDAY_REASON}=require('./observation.cjs');
 const reasonText={lower:'触下轨，R确认通过',lower_delayed:'R等待后的下一次有效复盘',upper:'观察窗口触及上轨',recovery:'冻结恢复条件通过',safety:'收盘较持仓均价回撤达到8.5%',no_lower:'未触下轨',no_upper:'未触上轨'};
 function protective(average,close){if(!(average>0))return 'NONE';const ratio=close/average;return ratio<=contract.exitRatio+1e-12?'SAFETY_SELL':ratio<=contract.warningRatio+1e-12?'WARNING':'NONE';}
 function replay(snapshot,options={}){
@@ -14,10 +15,12 @@ function replay(snapshot,options={}){
   if(bar)fill(day,bar);
   if(state.pending&&state.pending.targetDate<day)throw Error('模拟执行未完成 '+state.pending.targetDate);
   state.protection=state.shares&&bar?protective(state.average,bar.close):state.protection;
-  const signal=core.weekday(day)===1?review(day):null;
+  const window=core.weekday(day)===1?observation(snapshot,day):null;
+  if(window?.status==='unavailable')throw Error(window.reason);
+  const signal=window?.status==='ready'?review(day):null;
   let decision=null;
   if(state.protection==='SAFETY_SELL'&&bar){plan('SELL','safety',day);decision={action:'SAFETY_SELL',reason:'safety'};}
-  else if(core.weekday(day)===1){decision=core.ordinaryDecision(state,signal);if(decision.action==='WAIT_R')state.waiting=true;if(['BUY','SELL'].includes(decision.action))plan(decision.action,decision.reason,day);}
+  else if(core.weekday(day)===1){decision=window.status==='holiday'?{action:'SKIP_HOLIDAY',reason:HOLIDAY_REASON}:core.ordinaryDecision(state,signal);if(decision.action==='WAIT_R')state.waiting=true;if(['BUY','SELL'].includes(decision.action))plan(decision.action,decision.reason,day);}
   if(core.weekday(day)===1)reviews.push({date:day,signal,decision,state:{shares:state.shares,waiting:state.waiting,frozen:state.frozen},effective:Boolean(signal)});
  }
  return {state,trades,reviews,latestReview:reviews.at(-1)||null};
