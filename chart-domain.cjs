@@ -19,10 +19,19 @@ function chart(snapshot,now){
  const all=[...weeks.entries()],shown=all.slice(-52),lastWeek=all.at(-1)[0];
  const projected=shown.map(([wk,days])=>{
   const at=days.at(-1),prior=all.filter(([key])=>key<wk).map(([,items])=>items.at(-1));
-  // Historical bands retain their Tuesday observation price basis. For the
-  // latest candle, only PRIOR complete weeks fit the band, even on Wed/Fri.
-  const anchor=wk===lastWeek?at:days.filter(b=>b.date<=core.addDays(wk,1)).at(-1);
+  // A missing formal review is not a missing chart band. Only an explicitly
+  // verified holiday may use the first real session as a DISPLAY-ONLY anchor.
+  // Normal weeks retain their original anchor and the current week never fits itself.
+  const observationDates=[wk,core.addDays(wk,1)],dates=new Set(days.map(b=>b.date));
+  const observed=days.filter(b=>b.date<=observationDates[1]).at(-1);
+  const holiday=!observed&&observationDates.every(d=>snapshot.calendar?.[d]===false);
+  const observationMissing=observationDates.some(d=>d<=at.date&&
+    ((snapshot.calendar?.[d]===true&&!dates.has(d))||(snapshot.calendar?.[d]===false&&dates.has(d))));
+  const anchor=observationMissing||(!observed&&!holiday)?null:holiday?days[0]:wk===lastWeek?at:observed;
   const band=anchor?bounds(prior,anchor):null,shift=anchor?last.cumdiv-anchor.cumdiv:0;
+  const bandStatus=band?(holiday?'holiday_reference':'reference'):
+    !anchor?'missing_observation':prior.length<52?'insufficient_history':'invalid_adjusted_price';
+  const reviewStatus=holiday?'holiday':observationMissing||!observed?'unavailable':'observed';
   const adj=b=>last.cumdiv-b.cumdiv;
   const high=Math.max(...days.map(b=>b.high-adj(b))),low=Math.min(...days.map(b=>b.low-adj(b)));
   const highDates=days.filter(b=>Math.abs(b.high-adj(b)-high)<1e-8).map(b=>b.date),lowDates=days.filter(b=>Math.abs(b.low-adj(b)-low)<1e-8).map(b=>b.date);
@@ -33,7 +42,8 @@ function chart(snapshot,now){
   if(wk===lastWeek)for(let d=core.addDays(at.date,1);d<=core.addDays(wk,4);d=core.addDays(d,1))if(snapshot.calendar?.[d]!==false)partial=true;
   return {date:at.date,week:wk,firstDate:days[0].date,weekEnd:core.addDays(wk,4),sessions:days.length,open:days[0].open-adj(days[0]),close:at.close-adj(at),high,low,highDates,lowDates,
     raw:{open:days[0].open,high:rawHigh,low:rawLow,close:at.close,highDates:days.filter(b=>Math.abs(b.high-rawHigh)<1e-8).map(b=>b.date),lowDates:days.filter(b=>Math.abs(b.low-rawLow)<1e-8).map(b=>b.date)},previousClose,previousDate:prev?.date??null,change,changePct:previousClose>0?change/previousClose*100:null,dividend,
-    lower:band?band.lower-shift:null,middle:band?band.middle-shift:null,upper:band?band.upper-shift:null,fitEnd:band?.fitEnd||null,partial};
+    lower:band?band.lower-shift:null,middle:band?band.middle-shift:null,upper:band?band.upper-shift:null,fitEnd:band?.fitEnd||null,
+    bandStatus,bandAnchor:anchor?.date||null,reviewStatus,partial};
  });
  return {rows:projected,asof:last.date,expected,close:last.close,partial:projected.at(-1).partial,week:lastWeek,sessions:projected.at(-1).sessions,noCurrentWeek:lastWeek<core.monday(local.date)};
 }
