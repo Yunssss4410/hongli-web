@@ -5,9 +5,18 @@ on:
     branches: [main]
     paths-ignore: ['DEVELOPMENT.md', 'README.md', 'cloud-probe.test.cjs', '.github/workflows/cloud-data-probe.yml']
   schedule:
-    - cron: '5,15,25,35,45,55 7-9 * * 1-5'
-    - cron: '15 10-14 * * 1-5'
-    - cron: '35 1 * * 1-5'
+    - cron: '53 14 * * 1-5'
+      timezone: Asia/Shanghai
+    - cron: '3,13,33 15 * * 1-5'
+      timezone: Asia/Shanghai
+    - cron: '3,33 16 * * 1-5'
+      timezone: Asia/Shanghai
+    - cron: '13 17,18,20,22 * * 1-5'
+      timezone: Asia/Shanghai
+    - cron: '35,45 9 * * 1-5'
+      timezone: Asia/Shanghai
+env:
+  SCHEDULE_CRON: ${{ github.event.schedule || '' }}
 permissions:
   contents: read
 concurrency:
@@ -16,7 +25,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 42
     steps:
       - uses: actions/checkout@v6
         with:
@@ -27,6 +36,8 @@ jobs:
           package-manager-cache: false
       - name: Strategy and failure-mode tests
         run: node --test *.test.cjs
+      - name: Record dispatch and wait for the closing window
+        run: node schedule.cjs
       - name: Fetch, validate and build atomic snapshot
         id: snapshot
         run: node build.cjs
@@ -39,8 +50,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
+      - name: Preserve dispatch and validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatch-and-health
+          path: validation-output/
+          if-no-files-found: warn
+          retention-days: 3
     outputs:
       data-status: ${{ steps.snapshot.outputs.data-status }}
+      data-ready: ${{ steps.snapshot.outputs.data-ready }}
       snapshot-created: ${{ steps.snapshot.outcome == 'success' }}
   deploy:
     needs: build
@@ -65,17 +85,18 @@ jobs:
       - name: Report data failure after publishing diagnostic page
         env:
           DATA_STATUS: ${{ needs.recover.result == 'success' && needs.recover.outputs.data-status || needs.build.outputs.data-status }}
+          DATA_READY: ${{ needs.recover.result == 'success' && needs.recover.outputs.data-ready || needs.build.outputs.data-ready }}
           INITIAL_DEPLOY: ${{ needs.deploy.result }}
           RECOVERY_RESULT: ${{ needs.recover.result }}
         run: |
-          if [ "$DATA_STATUS" != "confirmed" ] || { [ "$INITIAL_DEPLOY" != "success" ] && [ "$RECOVERY_RESULT" != "success" ]; }; then
-            echo "::error::Data confirmation or deployment incomplete ($DATA_STATUS). Inspect build/recovery summary; old page may remain."
+          if [ "$DATA_READY" != "true" ] || { [ "$INITIAL_DEPLOY" != "success" ] && [ "$RECOVERY_RESULT" != "success" ]; }; then
+            echo "::error::Current close/review or deployment incomplete ($DATA_STATUS, ready=$DATA_READY). Inspect dispatch and recovery summary; old page may remain."
             exit 1
           fi
   recover:
     name: Bounded recovery and redeploy
     needs: [build, deploy]
-    if: ${{ always() && !cancelled() && (needs.build.outputs.data-status != 'confirmed' || needs.deploy.result != 'success') }}
+    if: ${{ always() && !cancelled() && (needs.build.outputs.data-ready != 'true' || needs.deploy.result != 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -87,6 +108,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     outputs:
       data-status: ${{ steps.snapshot.outputs.data-status }}
+      data-ready: ${{ steps.snapshot.outputs.data-ready }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -97,6 +119,8 @@ jobs:
           package-manager-cache: false
       - name: Revalidate code before recovery
         run: node --test *.test.cjs
+      - name: Record recovery dispatch and validate target window
+        run: node schedule.cjs
       - name: Restore first attempt including conflict locks
         if: needs.build.outputs.snapshot-created == 'true'
         uses: actions/download-artifact@v5

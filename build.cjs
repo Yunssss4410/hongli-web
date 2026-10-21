@@ -3,6 +3,7 @@ const fs=require('node:fs'),path=require('node:path');
 const p=require('./cloud-probe.cjs'),market=require('./market.cjs'),core=require('./strategy.cjs'),clock=require('./clock.cjs'),model=require('./model.cjs'),{chart}=require('./chart-domain.cjs'),contract=require('./contract.json');
 const SITE='https://yunssss4410.github.io/hongli-web/snapshot.json';
 const {dailyQuote}=require('./daily.cjs');
+const schedule=require('./schedule.cjs');
 function versionedHtml(html,read){return html.replace(/(src|href)="(style\.css|app\.js|chart\.js|buy-limit\.js|view-state\.js)"/g,(_,attr,file)=>`${attr}="${file}?v=${market.hash(read(file)).slice(0,16)}"`);}
 async function previousSnapshot(){const c=new AbortController(),t=setTimeout(()=>c.abort(),20000);try{const r=await fetch(SITE+'?check='+Date.now(),{signal:c.signal,cache:'no-store',redirect:'error'});if(r.status===404)return null;if(!r.ok)throw Error('无法读取上次发布快照 HTTP '+r.status);const text=await r.text();if(text.length>2000000)throw Error('快照过大');const s=JSON.parse(text);if(s.schemaVersion!==1||!s.generatedAt)throw Error('上次快照格式异常');return s;}finally{clearTimeout(t);}}
 async function acquire(previous,now){const raw={},sources={};await Promise.all(Object.entries(p.URLS).map(async([k,u])=>{if(k==='calendar'){const result=await require('./calendar-policy.cjs').acquireCalendar(previous,now);raw.calendarState=result;sources.calendar=result.source;return;}let error;for(let n=0;n<2;n++){try{const r=await p.request(u);raw[k]=r.text;const {text,...metadata}=r;sources[k]={status:'ok',...metadata};return;}catch(e){error=e.message;if(n===0)await new Promise(r=>setTimeout(r,1000));}}sources[k]={status:'error',error};}));return {raw,sources};}
@@ -52,18 +53,24 @@ async function build(options={}){
  const now=fixture?new Date(fixture.now):new Date();
  const previous=options.previous!==undefined?options.previous:fixture?.previous||(fixture?null:await previousSnapshot());
  const {raw,sources}=fixture?fixture:await acquire(previous,now);
- const output=published(previous,now,raw,sources);
+ // A request that crosses 15:00 must evaluate the close boundary after acquisition.
+ const checkedAt=fixture?now:new Date();
+ const output=published(previous,checkedAt,raw,sources);
+ const dispatchFile='validation-output/dispatch.json';
+ const dispatch=options.dispatch||(process.env.GITHUB_ACTIONS&&fs.existsSync(dispatchFile)?JSON.parse(fs.readFileSync(dispatchFile,'utf8')):null);
+ if(dispatch)output.dispatch={...dispatch,checkedAt:checkedAt.toISOString()};
  if(options.recovery)output.recovery=options.recovery;
  if(fixture)output.testOnly=true;
+ output.completion=schedule.completion(output,checkedAt);
  fs.mkdirSync('site',{recursive:true});
  for(const f of ['index.html','style.css','app.js','chart.js','buy-limit.js','view-state.js'])fs.copyFileSync(f,path.join('site',f));
  fs.writeFileSync('site/index.html',versionedHtml(fs.readFileSync('index.html','utf8'),f=>fs.readFileSync(f,'utf8')));
  fs.writeFileSync('site/snapshot.json',JSON.stringify(output));fs.writeFileSync('site/.nojekyll','');
  fs.mkdirSync('validation-output',{recursive:true});
- const report={status:output.status,asof:output.confirmed?.asof||null,audit:output.audit,error:output.error,sources:output.sources,recovery:output.recovery,bytes:fs.statSync('site/snapshot.json').size};
+ const report={status:output.status,completion:output.completion,dispatch:output.dispatch,asof:output.confirmed?.asof||null,audit:output.audit,error:output.error,sources:output.sources,recovery:output.recovery,bytes:fs.statSync('site/snapshot.json').size};
  fs.writeFileSync('validation-output/build-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
- if(process.env.GITHUB_OUTPUT)fs.appendFileSync(process.env.GITHUB_OUTPUT,'data-status='+output.status+'\n');
- if(output.status!=='confirmed'&&process.env.GITHUB_ACTIONS)console.log('::warning::行情/复盘未完成确认；网站将保留旧策略并发布诊断，详见数据健康任务');
+ if(process.env.GITHUB_OUTPUT)fs.appendFileSync(process.env.GITHUB_OUTPUT,'data-status='+output.status+'\ndata-ready='+output.completion.complete+'\n');
+ if(!output.completion.complete&&process.env.GITHUB_ACTIONS)console.log('::warning::行情/复盘未完成确认；网站将保留旧策略并发布诊断，详见数据健康任务');
  if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Read-only strategy build\n\n```json\n'+JSON.stringify(report,null,2)+'\n```\n');
  // Diagnostic publication on a source failure is intentional; no stale state becomes a new instruction.
  return output;

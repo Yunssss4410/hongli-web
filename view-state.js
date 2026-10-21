@@ -12,10 +12,13 @@
 }
 function health(s,now=new Date(),loadError=null){
  const f=freshness(s,now),ready=f.ready&&!loadError;
- const overdue=!ready&&now.getTime()-Date.parse(s.generatedAt)>45*60000;
+ const closeAt=Date.parse(f.date+'T15:00:00+08:00'),checkedAt=Date.parse(s.generatedAt);
+ const awaitingCloud=Boolean(s.calendar?.[f.date]&&f.time>='15:00:00'&&checkedAt<closeAt&&!ready);
+ const overdue=!ready&&now.getTime()-Math.max(checkedAt,awaitingCloud?closeAt:checkedAt)>45*60000;
  let reason=loadError?'网页刷新失败：'+loadError+'；旧内容仅供回顾':s.testOnly?'开发测试快照，不能用于交易':!Number.isFinite(Date.parse(s.generatedAt))||Date.parse(s.generatedAt)>now.getTime()+300000?'设备时间或快照时间异常':s.error||(!f.expected?'交易日历不足，无法确定应有数据日期':f.due?'已到执行时点，开盘执行数据待核验':f.reviewStale?'本周二复盘尚未完成':s.status==='provisional'?(s.preview?.reason||'先到数据待交叉复核')+'；不推进正式策略':!ready?'已确认数据落后，等待新收盘核验':'行情与策略检查通过');
- if(overdue)reason+='。云端超过45分钟未更新且尚未完成核验；请检查任务排队或失败，刷新网页不会启动抓取';
- return {...f,ready,overdue,reason,tone:loadError||s.status==='error'?'error':ready&&!s.audit?.warnings?.length?'ok':'warn',label:loadError?'网页连接失败':ready?'数据复核通过':s.status==='error'?'核验受阻':'等待核验'};
+ if(awaitingCloud&&!loadError)reason=`尚未收到 ${f.date} 收盘后的云端检查结果；上次检查在收盘前，不代表今日复盘已完成`;
+ if(overdue)reason+='。收盘核验超过45分钟未完成；请查看云端任务是否触发或失败，网页刷新不会启动抓取，也不能证明任务正在排队';
+ return {...f,ready,overdue,awaitingCloud,reason,tone:loadError||s.status==='error'?'error':ready&&!s.audit?.warnings?.length?'ok':'warn',label:loadError?'网页连接失败':ready?'数据复核通过':awaitingCloud?'等待云端收盘检查':s.status==='error'?'核验受阻':'等待核验'};
 }
 function sourceView(key,item={}){
  if(['sina','tencent'].includes(key)){
